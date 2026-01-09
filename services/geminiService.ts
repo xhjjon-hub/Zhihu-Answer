@@ -7,27 +7,51 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const SEARCH_MODEL = 'gemini-3-pro-preview'; // Supports search grounding best
 const DRAFT_MODEL = 'gemini-3-flash-preview'; // Fast and good for text generation
 
-export const searchZhihuQuestions = async (expertise: string[], interests: string[]): Promise<{ title: string; url?: string; reasoning: string }[]> => {
+export const searchZhihuQuestions = async (
+  expertise: string[], 
+  interests: string[], 
+  scope: 'personal' | 'hot' | 'random' = 'personal'
+): Promise<{ title: string; url?: string; reasoning: string }[]> => {
   const expertiseStr = expertise.join(', ');
   const interestsStr = interests.join(', ');
 
+  let scopeInstruction = "";
+  if (scope === 'hot') {
+    scopeInstruction = `
+      Focus exclusively on currently TRENDING, VIRAL, and HOT LIST questions on Zhihu across all categories (Society, Tech, Lifestyle, Career).
+      Ignore the user's specific niche unless it overlaps with trending topics.
+      The goal is to find traffic-heavy questions.
+    `;
+  } else if (scope === 'random') {
+    scopeInstruction = `
+      Focus on a purely RANDOM and DIVERSE selection of interesting questions from various fields (History, Science, Daily Life, Psychology, etc.).
+      Do not limit to the user's expertise. Surprise the user with variety.
+    `;
+  } else {
+    // Personal (Default)
+    scopeInstruction = `
+      Focus strictly on the user's profile:
+      Expertise: [${expertiseStr}]
+      Interests: [${interestsStr}]
+      Find questions where the user can provide expert authoritative answers or unique personal insights based on their interests.
+    `;
+  }
+
   try {
     const prompt = `
-      You are a Zhihu content strategy assistant. 
-      The user is an expert in these fields: [${expertiseStr}].
-      The user is interested in these topics: [${interestsStr}].
+      You are a Zhihu content strategy assistant.
       
-      Your goal: Find 5 high-quality, trending, or relevant questions on Zhihu (zhihu.com).
+      Task: Find 12 high-quality questions on Zhihu (zhihu.com) based on the following strategy:
+      ${scopeInstruction}
       
-      Selection Criteria:
-      1. Prioritize questions where the user's EXPERTISE allows for an authoritative answer.
-      2. Include questions related to INTERESTS where the user can share a unique perspective.
-      3. Avoid generic, low-quality, or spam questions.
+      General Criteria:
+      1. Questions should be open-ended and suitable for a high-quality answer.
+      2. Avoid spam or extremely low-quality questions.
       
       Return the result as a JSON array where each object has:
       - title: The question title.
       - url: The link to the question (if found via search).
-      - reasoning: A brief explanation (1 sentence) of why this matches the user's profile.
+      - reasoning: A brief explanation (1 sentence) of why this matches the selected strategy ('${scope}').
     `;
 
     const response = await ai.models.generateContent({
@@ -58,7 +82,7 @@ export const searchZhihuQuestions = async (expertise: string[], interests: strin
   } catch (error) {
     console.error("Error searching questions:", error);
     // Fallback simulation if search fails
-    const mainTopic = expertise[0] || interests[0] || "行业";
+    const mainTopic = expertise[0] || "生活";
     return [
       { 
         title: `[模拟] 关于${mainTopic}，目前行业内最大的误解是什么？`, 
@@ -66,13 +90,23 @@ export const searchZhihuQuestions = async (expertise: string[], interests: strin
         url: "https://www.zhihu.com"
       },
       { 
-        title: `[模拟] 新手入门${mainTopic}有哪些“坑”是必须避开的？`, 
-        reasoning: "实用向问题，长尾流量高，适合专业人士解答。",
+        title: `[模拟] 2024年，${mainTopic}领域有哪些值得关注的趋势？`, 
+        reasoning: "热点趋势类问题，流量较大。",
         url: "https://www.zhihu.com"
       },
        { 
-        title: `[模拟] 如何看待${mainTopic}最近的热点事件？`, 
+        title: `[模拟] 如何看待最近关于${mainTopic}的热门事件？`, 
         reasoning: "结合时事热点与兴趣，容易引发讨论。",
+        url: "https://www.zhihu.com"
+      },
+      { 
+        title: `[模拟] 有哪些鲜为人知的${mainTopic}冷知识？`, 
+        reasoning: "猎奇向问题，容易获得高赞。",
+        url: "https://www.zhihu.com"
+      },
+      { 
+        title: `[模拟] 作为一个${mainTopic}从业者，你有哪些忠告？`, 
+        reasoning: "身份代入感强，适合现身说法。",
         url: "https://www.zhihu.com"
       }
     ];

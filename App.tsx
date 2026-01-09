@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BookOpen, PenTool, CheckCircle, Clock, AlertCircle, RefreshCw, LogIn, ExternalLink, Plus, X, User, LogOut, Globe, ChevronDown, Repeat, PlusCircle, ArrowRight } from 'lucide-react';
+import { BookOpen, PenTool, CheckCircle, Clock, AlertCircle, RefreshCw, LogIn, ExternalLink, Plus, X, User, LogOut, Globe, ChevronDown, Repeat, PlusCircle, ArrowRight, QrCode, Smartphone, MessageCircle, Flame, Shuffle, UserCircle } from 'lucide-react';
 import { Draft, DraftStatus, Question, ZhihuUser, Account } from './types';
 import { searchZhihuQuestions, generateDraft } from './services/geminiService';
 import DraftEditor from './components/DraftEditor';
@@ -101,6 +101,7 @@ const App: React.FC = () => {
   // --- UI/Transient State ---
   const [questions, setQuestions] = useState<Question[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchScope, setSearchScope] = useState<'personal' | 'hot' | 'random'>('personal');
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
   const [activeDraft, setActiveDraft] = useState<Draft | null>(null);
   const [activeTab, setActiveTab] = useState<'pending' | 'published'>('pending');
@@ -110,6 +111,7 @@ const App: React.FC = () => {
 
   // --- Login/Setup Form State ---
   const [loginStep, setLoginStep] = useState<'list' | 'connect'>('list'); // 'list' existing accounts or 'connect' new
+  const [loginMethod, setLoginMethod] = useState<'qr' | 'phone'>('qr');
   const [loginInputName, setLoginInputName] = useState('');
   const [setupExpertise, setSetupExpertise] = useState<string[]>([]);
   const [setupInterests, setSetupInterests] = useState<string[]>([]);
@@ -167,14 +169,14 @@ const App: React.FC = () => {
 
   // --- Handlers: Account Management ---
 
-  const handleConnectAccount = () => {
-    if (!loginInputName.trim()) return;
+  const handleConnectAccount = (mockName?: string) => {
+    const name = mockName || loginInputName || "知乎用户" + Math.floor(Math.random() * 1000);
     
     // Simulate logging in a new user
     const newUser: ZhihuUser = {
       id: `u-${Date.now()}`,
-      name: loginInputName,
-      avatar: `https://api.dicebear.com/7.x/notionists/svg?seed=${loginInputName}`,
+      name: name,
+      avatar: `https://api.dicebear.com/7.x/notionists/svg?seed=${name}`,
       headline: "分享知识，发现更大的世界"
     };
 
@@ -193,6 +195,7 @@ const App: React.FC = () => {
     // Reset form
     setLoginInputName('');
     setLoginStep('list');
+    setLoginMethod('qr');
     setSetupExpertise([]); // Reset setup form for new user
     setSetupInterests([]);
   };
@@ -231,7 +234,7 @@ const App: React.FC = () => {
     setIsSearching(true);
     setQuestions([]);
     try {
-      const results = await searchZhihuQuestions(currentAccount.expertise, currentAccount.interests);
+      const results = await searchZhihuQuestions(currentAccount.expertise, currentAccount.interests, searchScope);
       const mappedQuestions: Question[] = results.map((r, idx) => ({
         id: `q-${Date.now()}-${idx}`,
         title: r.title,
@@ -302,7 +305,7 @@ const App: React.FC = () => {
   if (!currentAccount) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-blue-100">
+        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-blue-100 relative overflow-hidden">
           <div className="flex justify-center mb-6">
             <div className="bg-blue-600 p-4 rounded-xl shadow-lg shadow-blue-200">
               <PenTool className="text-white w-8 h-8" />
@@ -338,43 +341,105 @@ const App: React.FC = () => {
             </div>
           ) : (
             <div className="animate-fade-in">
-              <p className="text-center text-gray-500 mb-8">
-                {accounts.length === 0 ? "首次使用，请连接您的知乎账号" : "连接一个新的知乎账号"}
-              </p>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">知乎用户名 / ID</label>
-                  <input 
-                    type="text" 
-                    value={loginInputName}
-                    onChange={(e) => setLoginInputName(e.target.value)}
-                    placeholder="例如：知乎创作者"
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                    onKeyDown={(e) => e.key === 'Enter' && handleConnectAccount()}
-                  />
-                  <p className="text-xs text-gray-400 mt-1">此操作仅模拟登录，不会校验真实密码</p>
-                </div>
-                
-                <div className="flex gap-3">
-                  {accounts.length > 0 && (
-                    <button
-                      onClick={() => setLoginStep('list')}
-                      className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-lg font-medium hover:bg-gray-200"
-                    >
-                      返回列表
-                    </button>
-                  )}
-                  <button
-                    onClick={handleConnectAccount}
-                    disabled={!loginInputName.trim()}
-                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-blue-100 flex items-center justify-center gap-2"
+              {/* Login Method Tabs */}
+              <div className="flex border-b border-gray-100 mb-6">
+                <button
+                  onClick={() => setLoginMethod('qr')}
+                  className={`flex-1 pb-3 text-sm font-bold transition-colors relative ${
+                    loginMethod === 'qr' ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  扫码登录
+                  {loginMethod === 'qr' && <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-blue-600 rounded-full"></span>}
+                </button>
+                <button
+                   onClick={() => setLoginMethod('phone')}
+                   className={`flex-1 pb-3 text-sm font-bold transition-colors relative ${
+                    loginMethod === 'phone' ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  免密登录
+                  {loginMethod === 'phone' && <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-blue-600 rounded-full"></span>}
+                </button>
+              </div>
+
+              {loginMethod === 'qr' ? (
+                <div className="flex flex-col items-center justify-center py-4 space-y-4">
+                  <div 
+                    className="w-40 h-40 bg-gray-100 rounded-xl flex items-center justify-center cursor-pointer hover:ring-4 ring-blue-50 transition-all border border-gray-200"
+                    onClick={() => handleConnectAccount("扫码用户_" + Math.floor(Math.random() * 100))}
+                    title="点击模拟扫码成功"
                   >
-                    <LogIn size={18} />
-                    确认连接
+                    <QrCode size={64} className="text-gray-800" />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    请使用 <span className="text-blue-600 font-bold">知乎App</span> 扫码登录
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4 py-2">
+                  <div>
+                     <div className="relative">
+                       <Smartphone size={18} className="absolute left-3 top-3.5 text-gray-400" />
+                       <input 
+                        type="text" 
+                        placeholder="请输入手机号"
+                        className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                      />
+                     </div>
+                  </div>
+                  <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        value={loginInputName}
+                        onChange={(e) => setLoginInputName(e.target.value)}
+                        placeholder="输入验证码 (任意模拟)"
+                        className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                        onKeyDown={(e) => e.key === 'Enter' && handleConnectAccount()}
+                      />
+                      <button className="px-3 py-2 bg-gray-50 text-blue-600 text-xs rounded-lg border border-gray-100 hover:bg-blue-50">
+                        获取验证码
+                      </button>
+                  </div>
+                  <button
+                    onClick={() => handleConnectAccount()}
+                    disabled={!loginInputName.trim()}
+                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-blue-100 flex items-center justify-center gap-2"
+                  >
+                    登录
                   </button>
                 </div>
+              )}
+
+              {/* Social Login Footer */}
+              <div className="mt-8">
+                <div className="relative flex justify-center text-xs">
+                  <span className="bg-white px-2 text-gray-400 z-10">其他方式登录</span>
+                  <div className="absolute inset-0 flex items-center">
+                     <div className="w-full border-t border-gray-100"></div>
+                  </div>
+                </div>
+                <div className="flex justify-center gap-6 mt-4">
+                   <button onClick={() => handleConnectAccount("微信用户")} className="w-10 h-10 rounded-full bg-green-50 text-green-600 flex items-center justify-center hover:bg-green-100 transition-colors">
+                      <MessageCircle size={20} />
+                   </button>
+                   <button onClick={() => handleConnectAccount("QQ用户")} className="w-10 h-10 rounded-full bg-blue-50 text-blue-400 flex items-center justify-center hover:bg-blue-100 transition-colors">
+                      <Globe size={20} />
+                   </button>
+                   <button onClick={() => handleConnectAccount("微博用户")} className="w-10 h-10 rounded-full bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-100 transition-colors">
+                      <Flame size={20} />
+                   </button>
+                </div>
               </div>
+              
+              {accounts.length > 0 && (
+                <button
+                  onClick={() => setLoginStep('list')}
+                  className="w-full mt-6 text-sm text-gray-400 hover:text-gray-600"
+                >
+                  返回账号列表
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -545,56 +610,84 @@ const App: React.FC = () => {
           {/* Left Column: Question Scanner */}
           <div className="lg:col-span-5 space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                <h2 className="font-bold text-gray-800 flex items-center gap-2">
-                  <RefreshCw size={18} className="text-blue-500" />
-                  精选问题库
-                </h2>
-                <button
-                  onClick={handleSearch}
-                  disabled={isSearching}
-                  className="text-sm px-3 py-1.5 bg-white border border-gray-200 rounded-md hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
-                >
-                  {isSearching ? '检索中...' : '扫描新问题'}
-                </button>
+              
+              {/* Toolbar */}
+              <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="font-bold text-gray-800 flex items-center gap-2">
+                    <RefreshCw size={18} className="text-blue-500" />
+                    精选问题库
+                  </h2>
+                  <span className="text-xs text-gray-400">共扫描到 {questions.length} 个相关问题</span>
+                </div>
+                
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                     <select 
+                        value={searchScope}
+                        onChange={(e) => setSearchScope(e.target.value as any)}
+                        disabled={isSearching}
+                        className="w-full appearance-none pl-9 pr-8 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none text-gray-700 cursor-pointer disabled:opacity-50"
+                     >
+                       <option value="personal">🎯 个人定制 (基于画像)</option>
+                       <option value="hot">🔥 全站热榜 (流量优先)</option>
+                       <option value="random">🎲 随便看看 (拓展思路)</option>
+                     </select>
+                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                       {searchScope === 'hot' ? <Flame size={14}/> : searchScope === 'random' ? <Shuffle size={14} /> : <UserCircle size={14} />}
+                     </div>
+                     <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                  
+                  <button
+                    onClick={handleSearch}
+                    disabled={isSearching}
+                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 shadow-sm shadow-blue-200 whitespace-nowrap"
+                  >
+                    {isSearching ? '检索中...' : '开始扫描'}
+                  </button>
+                </div>
               </div>
               
-              <div className="p-5 space-y-4 max-h-[600px] overflow-y-auto">
+              <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto bg-gray-50/30">
                 {questions.length === 0 && !isSearching ? (
-                  <div className="text-center py-10 text-gray-400">
-                    <p className="text-sm font-medium">暂无推荐问题</p>
-                    <p className="text-xs mt-2 text-gray-400 max-w-[200px] mx-auto">点击上方按钮，基于您的擅长与兴趣挖掘知乎热榜。</p>
+                  <div className="text-center py-12 text-gray-400">
+                    <p className="text-sm font-medium text-gray-500">暂无推荐问题</p>
+                    <p className="text-xs mt-2 text-gray-400 max-w-[200px] mx-auto">请选择扫描范围并点击“开始扫描”挖掘知乎问题。</p>
                   </div>
                 ) : (
                   questions.map(q => (
-                    <div key={q.id} className="group border border-gray-100 rounded-lg p-4 hover:border-blue-200 hover:shadow-md transition-all bg-white">
+                    <div key={q.id} className="group border border-gray-100 rounded-lg p-4 hover:border-blue-300 hover:shadow-md transition-all bg-white relative">
                       <div className="flex justify-between items-start gap-3">
-                        <h3 className="font-bold text-gray-800 leading-snug group-hover:text-blue-600 transition-colors">
+                        <h3 className="font-bold text-gray-800 leading-snug group-hover:text-blue-600 transition-colors pr-6">
                           {q.title}
                         </h3>
                         {q.url && (
-                          <a href={q.url} target="_blank" rel="noreferrer" className="text-gray-400 hover:text-blue-500 pt-1">
-                            <ExternalLink size={14} />
+                          <a href={q.url} target="_blank" rel="noreferrer" className="absolute top-4 right-4 text-gray-300 hover:text-blue-500 transition-colors">
+                            <ExternalLink size={16} />
                           </a>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 mt-3 bg-gray-50 inline-block px-2 py-1 rounded border border-gray-100">
-                         💡 {q.reasoning}
-                      </p>
+                      <div className="mt-3 flex items-start gap-2">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded flex-shrink-0 mt-0.5">推荐理由</span>
+                        <p className="text-xs text-gray-500 leading-relaxed">
+                          {q.reasoning}
+                        </p>
+                      </div>
                       <button
                         onClick={() => handleGenerateDraft(q)}
                         disabled={!!isGenerating}
-                        className="w-full mt-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm shadow-blue-100"
+                        className="w-full mt-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-600 hover:text-white rounded-lg transition-all flex items-center justify-center gap-2 border border-blue-100 group-hover:border-blue-200"
                       >
                         {isGenerating === q.id ? (
                           <>
-                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                            <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
                             AI 撰写中...
                           </>
                         ) : (
                           <>
                             <Plus size={16} />
-                            选定并撰写草稿
+                            生成回答草稿
                           </>
                         )}
                       </button>
@@ -604,7 +697,7 @@ const App: React.FC = () => {
                 {isSearching && (
                    <div className="flex flex-col items-center justify-center py-12 space-y-4">
                      <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
-                     <p className="text-sm text-gray-500">正在分析您的专家画像并全网检索...</p>
+                     <p className="text-sm text-gray-500">正在全网检索相关问题...</p>
                    </div>
                 )}
               </div>
