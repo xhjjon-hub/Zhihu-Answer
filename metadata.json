@@ -1,0 +1,5 @@
+{
+  "name": "Zhihu Auto-Creator",
+  "description": "An intelligent assistant for automating Zhihu content creation, managing drafts, and tracking user activity.",
+  "requestFramePermissions": []
+}
