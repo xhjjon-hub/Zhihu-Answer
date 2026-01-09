@@ -14,6 +14,7 @@ export interface Question {
 
 export interface Draft {
   id: string;
+  ownerId: string; // Link draft to specific account
   questionTitle: string;
   questionUrl?: string;
   content: string; // Markdown content
@@ -23,14 +24,21 @@ export interface Draft {
 }
 
 export interface ZhihuUser {
+  id: string;
   name: string;
   avatar: string;
   headline: string;
 }
 
-export interface UserConfig {
+export interface Account {
+  user: ZhihuUser;
   expertise: string[];
   interests: string[];
+  hasCompletedSetup: boolean;
   lastInteraction: number;
-  zhihuUser?: ZhihuUser | null; // Added Zhihu user info
+}
+
+export interface AppState {
+  accounts: Account[];
+  currentAccountId: string | null;
 }

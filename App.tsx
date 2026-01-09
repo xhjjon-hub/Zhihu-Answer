@@ -1,20 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { BookOpen, PenTool, CheckCircle, Clock, AlertCircle, RefreshCw, LogIn, ExternalLink, Plus, X, User, LogOut, Globe, ChevronDown, Repeat } from 'lucide-react';
-import { Draft, DraftStatus, UserConfig, Question, ZhihuUser } from './types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { BookOpen, PenTool, CheckCircle, Clock, AlertCircle, RefreshCw, LogIn, ExternalLink, Plus, X, User, LogOut, Globe, ChevronDown, Repeat, PlusCircle, ArrowRight } from 'lucide-react';
+import { Draft, DraftStatus, Question, ZhihuUser, Account } from './types';
 import { searchZhihuQuestions, generateDraft } from './services/geminiService';
 import DraftEditor from './components/DraftEditor';
 
-// --- Components for Tag Selection ---
+// --- Components ---
 
 const SUGGESTED_EXPERTISE = ["深度学习", "职场心理学", "美食探店", "前端开发", "法律咨询", "投资理财", "医学科普"];
 const SUGGESTED_INTERESTS = ["科幻电影", "旅行摄影", "历史", "猫", "咖啡", "极简生活", "游戏设计"];
-
-// Mock Zhihu User Data
-const MOCK_ZHIHU_USER: ZhihuUser = {
-  name: "知乎创作者",
-  avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix",
-  headline: "分享知识，发现更大的世界"
-};
 
 const TagSelector: React.FC<{
   label: string;
@@ -88,133 +81,157 @@ const TagSelector: React.FC<{
   );
 };
 
+// --- Main App ---
 
 const App: React.FC = () => {
-  // State
-  const [userConfig, setUserConfig] = useState<UserConfig | null>(null);
-  
-  // Login/Config State
-  const [expertiseTags, setExpertiseTags] = useState<string[]>([]);
-  const [interestTags, setInterestTags] = useState<string[]>([]);
-  const [isLoginMocking, setIsLoginMocking] = useState(false);
-
-  // App State
-  const [questions, setQuestions] = useState<Question[]>([]);
+  // --- Global State ---
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [currentAccountId, setCurrentAccountId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  
+  // --- Derived State ---
+  const currentAccount = useMemo(() => 
+    accounts.find(a => a.user.id === currentAccountId) || null
+  , [accounts, currentAccountId]);
+
+  const userDrafts = useMemo(() => 
+    drafts.filter(d => d.ownerId === currentAccountId)
+  , [drafts, currentAccountId]);
+
+  // --- UI/Transient State ---
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
   const [activeDraft, setActiveDraft] = useState<Draft | null>(null);
-  const [inactivityAlert, setInactivityAlert] = useState<string | null>(null);
-  
-  // View State
   const [activeTab, setActiveTab] = useState<'pending' | 'published'>('pending');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [publishedSuccessDraft, setPublishedSuccessDraft] = useState<Draft | null>(null);
+  const [inactivityAlert, setInactivityAlert] = useState<string | null>(null);
 
-  // Initialize
+  // --- Login/Setup Form State ---
+  const [loginStep, setLoginStep] = useState<'list' | 'connect'>('list'); // 'list' existing accounts or 'connect' new
+  const [loginInputName, setLoginInputName] = useState('');
+  const [setupExpertise, setSetupExpertise] = useState<string[]>([]);
+  const [setupInterests, setSetupInterests] = useState<string[]>([]);
+
+  // --- Initialization ---
   useEffect(() => {
-    const storedConfig = localStorage.getItem('zhihucop_config');
+    const storedAccounts = localStorage.getItem('zhihucop_accounts');
+    const storedCurrentId = localStorage.getItem('zhihucop_current_id');
     const storedDrafts = localStorage.getItem('zhihucop_drafts');
 
-    if (storedDrafts) {
-      setDrafts(JSON.parse(storedDrafts));
-    }
-
-    if (storedConfig) {
-      const config: UserConfig = JSON.parse(storedConfig);
-      // Migration for old config format if needed (string vs array)
-      if (typeof config.expertise === 'string') {
-        config.expertise = [config.expertise];
-      }
-      if (!config.interests) config.interests = [];
-      
-      setUserConfig(config);
-
-      // Check inactivity (3 days = 259200000 ms)
-      const now = Date.now();
-      const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-      if (now - config.lastInteraction > threeDaysMs) {
-        const pendingCount = (JSON.parse(storedDrafts || '[]') as Draft[]).filter(d => d.status === DraftStatus.PENDING).length;
-        setInactivityAlert(`您已经超过 3 天没来处理草稿了，当前有 ${pendingCount > 0 ? pendingCount : '若干'} 个热门问题可能错过最佳曝光期，建议尽快处理！`);
-      }
-    }
+    if (storedAccounts) setAccounts(JSON.parse(storedAccounts));
+    if (storedCurrentId) setCurrentAccountId(storedCurrentId);
+    if (storedDrafts) setDrafts(JSON.parse(storedDrafts));
   }, []);
 
-  // Persistence Helper
-  const updateActivity = () => {
-    if (!userConfig) return;
-    const newConfig = { ...userConfig, lastInteraction: Date.now() };
-    setUserConfig(newConfig);
-    localStorage.setItem('zhihucop_config', JSON.stringify(newConfig));
+  // --- Persistence Helpers ---
+  const saveAccounts = (newAccounts: Account[]) => {
+    setAccounts(newAccounts);
+    localStorage.setItem('zhihucop_accounts', JSON.stringify(newAccounts));
   };
 
-  const saveDraftsToStorage = (newDrafts: Draft[]) => {
+  const saveCurrentId = (id: string | null) => {
+    setCurrentAccountId(id);
+    if (id) localStorage.setItem('zhihucop_current_id', id);
+    else localStorage.removeItem('zhihucop_current_id');
+  };
+
+  const saveDrafts = (newDrafts: Draft[]) => {
     setDrafts(newDrafts);
     localStorage.setItem('zhihucop_drafts', JSON.stringify(newDrafts));
   };
 
-  const saveConfigToStorage = (config: UserConfig) => {
-    setUserConfig(config);
-    localStorage.setItem('zhihucop_config', JSON.stringify(config));
+  const updateAccountInteraction = () => {
+    if (!currentAccount) return;
+    const updatedAccounts = accounts.map(a => 
+      a.user.id === currentAccount.user.id 
+        ? { ...a, lastInteraction: Date.now() } 
+        : a
+    );
+    saveAccounts(updatedAccounts);
   };
 
-  // Handlers
-  const handleLoginZhihu = async () => {
-    setIsLoginMocking(true);
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setIsLoginMocking(false);
-    return MOCK_ZHIHU_USER;
-  };
+  // --- Inactivity Check ---
+  useEffect(() => {
+    if (currentAccount && currentAccount.hasCompletedSetup) {
+      const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+      if (Date.now() - currentAccount.lastInteraction > threeDaysMs) {
+        const pendingCount = userDrafts.filter(d => d.status === DraftStatus.PENDING).length;
+        setInactivityAlert(`您已经超过 3 天没来处理草稿了，当前有 ${pendingCount > 0 ? pendingCount : '若干'} 个热门问题可能错过最佳曝光期，建议尽快处理！`);
+        // Update interaction immediately so alert doesn't persist forever on refresh
+        updateAccountInteraction(); 
+      }
+    }
+  }, [currentAccountId]); // Only run when user switches
 
-  const handleSetupComplete = async () => {
-    if (expertiseTags.length === 0) return;
+  // --- Handlers: Account Management ---
+
+  const handleConnectAccount = () => {
+    if (!loginInputName.trim()) return;
     
-    // Auto login for demo purposes if not explicitly handling it separately, 
-    // or just assume user is setting up fresh.
-    const zhihuUser = await handleLoginZhihu();
-
-    const config: UserConfig = {
-      expertise: expertiseTags,
-      interests: interestTags,
-      lastInteraction: Date.now(),
-      zhihuUser: zhihuUser
+    // Simulate logging in a new user
+    const newUser: ZhihuUser = {
+      id: `u-${Date.now()}`,
+      name: loginInputName,
+      avatar: `https://api.dicebear.com/7.x/notionists/svg?seed=${loginInputName}`,
+      headline: "分享知识，发现更大的世界"
     };
-    saveConfigToStorage(config);
-    updateActivity();
+
+    const newAccount: Account = {
+      user: newUser,
+      expertise: [],
+      interests: [],
+      hasCompletedSetup: false,
+      lastInteraction: Date.now()
+    };
+
+    const updatedAccounts = [...accounts, newAccount];
+    saveAccounts(updatedAccounts);
+    saveCurrentId(newUser.id);
+    
+    // Reset form
+    setLoginInputName('');
+    setLoginStep('list');
+    setSetupExpertise([]); // Reset setup form for new user
+    setSetupInterests([]);
+  };
+
+  const handleSelectAccount = (id: string) => {
+    saveCurrentId(id);
+    setLoginStep('list');
   };
 
   const handleLogout = () => {
-    if (!userConfig) return;
-    const newConfig = { ...userConfig, zhihuUser: null };
-    saveConfigToStorage(newConfig);
+    saveCurrentId(null);
     setShowProfileMenu(false);
+    setLoginStep('list');
   };
 
-  const handleSwitchAccount = async () => {
-    handleLogout();
-    // In a real app, this would trigger a new login flow. 
-    // Here we just clear the user so they see the setup/login button or state (if we separate setup from login).
-    // For simplicity, let's just re-login with a different mock or same mock.
-    const zhihuUser = await handleLoginZhihu();
-    if(userConfig) {
-        saveConfigToStorage({ ...userConfig, zhihuUser });
-    }
+  const handleCompleteSetup = () => {
+    if (!currentAccount) return;
+    
+    const updatedAccount: Account = {
+      ...currentAccount,
+      expertise: setupExpertise,
+      interests: setupInterests,
+      hasCompletedSetup: true,
+      lastInteraction: Date.now()
+    };
+
+    const updatedAccounts = accounts.map(a => a.user.id === currentAccount.user.id ? updatedAccount : a);
+    saveAccounts(updatedAccounts);
   };
 
-  const handleFullReset = () => {
-    setUserConfig(null);
-    localStorage.removeItem('zhihucop_config');
-    setShowProfileMenu(false);
-  };
+  // --- Handlers: Core Features ---
 
   const handleSearch = async () => {
-    if (!userConfig) return;
-    updateActivity();
+    if (!currentAccount) return;
+    updateAccountInteraction();
     setIsSearching(true);
     setQuestions([]);
     try {
-      const results = await searchZhihuQuestions(userConfig.expertise, userConfig.interests);
+      const results = await searchZhihuQuestions(currentAccount.expertise, currentAccount.interests);
       const mappedQuestions: Question[] = results.map((r, idx) => ({
         id: `q-${Date.now()}-${idx}`,
         title: r.title,
@@ -231,27 +248,28 @@ const App: React.FC = () => {
   };
 
   const handleGenerateDraft = async (question: Question) => {
-    if (!userConfig) return;
-    updateActivity();
+    if (!currentAccount) return;
+    updateAccountInteraction();
     setIsGenerating(question.id);
 
     try {
-      const content = await generateDraft(question.title, userConfig.expertise, userConfig.interests);
+      const content = await generateDraft(question.title, currentAccount.expertise, currentAccount.interests);
       const newDraft: Draft = {
         id: `d-${Date.now()}`,
+        ownerId: currentAccount.user.id, // Bind to current user
         questionTitle: question.title,
         questionUrl: question.url,
         content: content,
         status: DraftStatus.PENDING,
         createdAt: Date.now(),
-        tags: [...userConfig.expertise, ...userConfig.interests].slice(0, 3)
+        tags: [...currentAccount.expertise, ...currentAccount.interests].slice(0, 3)
       };
       
       const newDrafts = [newDraft, ...drafts];
-      saveDraftsToStorage(newDrafts);
+      saveDrafts(newDrafts);
       
       setQuestions(prev => prev.filter(q => q.id !== question.id));
-      setActiveTab('pending'); // Switch to pending tab to show the new draft
+      setActiveTab('pending');
     } catch (e) {
       console.error(e);
     } finally {
@@ -260,93 +278,165 @@ const App: React.FC = () => {
   };
 
   const handleUpdateDraft = (updatedDraft: Draft) => {
-    updateActivity();
+    updateAccountInteraction();
     const newDrafts = drafts.map(d => d.id === updatedDraft.id ? updatedDraft : d);
-    saveDraftsToStorage(newDrafts);
+    saveDrafts(newDrafts);
     setActiveDraft(updatedDraft);
   };
 
   const handlePublishDraft = (draftId: string) => {
-    updateActivity();
+    updateAccountInteraction();
     const newDrafts = drafts.map(d => d.id === draftId ? { ...d, status: DraftStatus.PUBLISHED } : d);
-    saveDraftsToStorage(newDrafts);
-    
-    // Close editor and show success dialog
+    saveDrafts(newDrafts);
     setActiveDraft(null);
     const publishedDraft = newDrafts.find(d => d.id === draftId) || null;
     setPublishedSuccessDraft(publishedDraft);
   };
 
-  // Filter Drafts
-  const pendingDrafts = drafts.filter(d => d.status === DraftStatus.PENDING);
-  const publishedDrafts = drafts.filter(d => d.status === DraftStatus.PUBLISHED);
+  // --- Filtered Views ---
+  const pendingDrafts = userDrafts.filter(d => d.status === DraftStatus.PENDING);
+  const publishedDrafts = userDrafts.filter(d => d.status === DraftStatus.PUBLISHED);
 
-  // Render Login/Setup Screen
-  if (!userConfig) {
+
+  // --- Render: Login Screen (No Active Account) ---
+  if (!currentAccount) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-lg border border-blue-100">
+        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-blue-100">
           <div className="flex justify-center mb-6">
             <div className="bg-blue-600 p-4 rounded-xl shadow-lg shadow-blue-200">
               <PenTool className="text-white w-8 h-8" />
             </div>
           </div>
           <h1 className="text-2xl font-bold text-center text-gray-800 mb-2">知乎自动化创作助手</h1>
-          <p className="text-center text-gray-500 mb-8">绑定账号并设定“人设”，开启高效创作之旅。</p>
           
-          <div className="space-y-4">
-            <div className="p-4 bg-blue-50 rounded-lg border border-blue-100 mb-6">
-               <h3 className="text-sm font-bold text-blue-800 mb-2 flex items-center gap-2">
-                 <User size={16}/> 步骤 1: 绑定知乎账号
-               </h3>
-               <div className="flex items-center gap-3">
-                 <div className="w-10 h-10 rounded-full bg-white border border-blue-200 flex items-center justify-center overflow-hidden">
-                   {isLoginMocking ? (
-                     <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                   ) : (
-                      <img src={MOCK_ZHIHU_USER.avatar} alt="Avatar" className="w-full h-full object-cover" />
-                   )}
-                 </div>
-                 <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-800">{MOCK_ZHIHU_USER.name}</p>
-                    <p className="text-xs text-gray-500">{MOCK_ZHIHU_USER.headline}</p>
-                 </div>
-                 <div className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">已连接</div>
-               </div>
+          {loginStep === 'list' && accounts.length > 0 ? (
+            <div className="animate-fade-in">
+              <p className="text-center text-gray-500 mb-6">请选择要登录的账号</p>
+              <div className="space-y-3 mb-6 max-h-60 overflow-y-auto">
+                {accounts.map(account => (
+                  <button
+                    key={account.user.id}
+                    onClick={() => handleSelectAccount(account.user.id)}
+                    className="w-full flex items-center gap-4 p-3 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all group text-left"
+                  >
+                     <img src={account.user.avatar} alt="avatar" className="w-10 h-10 rounded-full bg-gray-100 object-cover" />
+                     <div className="flex-1">
+                       <p className="font-bold text-gray-800">{account.user.name}</p>
+                       <p className="text-xs text-gray-400 truncate">{account.hasCompletedSetup ? '已配置完毕' : '待配置偏好'}</p>
+                     </div>
+                     <ArrowRight size={16} className="text-gray-300 group-hover:text-blue-500" />
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setLoginStep('connect')}
+                className="w-full py-3 bg-white border border-dashed border-gray-300 text-gray-500 rounded-lg hover:bg-gray-50 hover:text-blue-600 font-medium flex items-center justify-center gap-2 transition-colors"
+              >
+                <PlusCircle size={18} /> 连接新账号
+              </button>
             </div>
-
-            <TagSelector 
-              label="步骤 2: 您的擅长领域 (必选)" 
-              selected={expertiseTags}
-              onChange={setExpertiseTags}
-              suggestions={SUGGESTED_EXPERTISE}
-              placeholder="输入并回车，如：深度学习"
-            />
-            
-            <TagSelector 
-              label="步骤 3: 您感兴趣的领域 (可选)" 
-              selected={interestTags}
-              onChange={setInterestTags}
-              suggestions={SUGGESTED_INTERESTS}
-              placeholder="输入并回车，如：科幻电影"
-            />
-
-            <button
-              onClick={handleSetupComplete}
-              disabled={expertiseTags.length === 0 || isLoginMocking}
-              className="w-full mt-6 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-blue-100 flex items-center justify-center gap-2"
-            >
-              <LogIn size={18} />
-              完成设置并进入工作台
-            </button>
-          </div>
+          ) : (
+            <div className="animate-fade-in">
+              <p className="text-center text-gray-500 mb-8">
+                {accounts.length === 0 ? "首次使用，请连接您的知乎账号" : "连接一个新的知乎账号"}
+              </p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">知乎用户名 / ID</label>
+                  <input 
+                    type="text" 
+                    value={loginInputName}
+                    onChange={(e) => setLoginInputName(e.target.value)}
+                    placeholder="例如：知乎创作者"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    onKeyDown={(e) => e.key === 'Enter' && handleConnectAccount()}
+                  />
+                  <p className="text-xs text-gray-400 mt-1">此操作仅模拟登录，不会校验真实密码</p>
+                </div>
+                
+                <div className="flex gap-3">
+                  {accounts.length > 0 && (
+                    <button
+                      onClick={() => setLoginStep('list')}
+                      className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-lg font-medium hover:bg-gray-200"
+                    >
+                      返回列表
+                    </button>
+                  )}
+                  <button
+                    onClick={handleConnectAccount}
+                    disabled={!loginInputName.trim()}
+                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-blue-100 flex items-center justify-center gap-2"
+                  >
+                    <LogIn size={18} />
+                    确认连接
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
+  // --- Render: Setup Screen (Account Exists but !hasCompletedSetup) ---
+  if (!currentAccount.hasCompletedSetup) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-lg border border-blue-100 animate-fade-in-up">
+           <div className="flex items-center gap-3 mb-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
+             <img src={currentAccount.user.avatar} alt="avatar" className="w-12 h-12 rounded-full border-2 border-white shadow-sm" />
+             <div>
+               <h2 className="font-bold text-gray-800">欢迎，{currentAccount.user.name}</h2>
+               <p className="text-xs text-blue-600">账号已连接</p>
+             </div>
+           </div>
+
+           <h3 className="text-xl font-bold text-gray-800 mb-2">完善创作人设</h3>
+           <p className="text-gray-500 mb-6 text-sm">我们将根据您的擅长领域为您挖掘合适的问题。此设置仅需配置一次。</p>
+
+           <TagSelector 
+              label="1. 您的擅长领域 (必选)" 
+              selected={setupExpertise}
+              onChange={setSetupExpertise}
+              suggestions={SUGGESTED_EXPERTISE}
+              placeholder="输入并回车，如：深度学习"
+            />
+            
+            <TagSelector 
+              label="2. 您感兴趣的领域 (可选)" 
+              selected={setupInterests}
+              onChange={setSetupInterests}
+              suggestions={SUGGESTED_INTERESTS}
+              placeholder="输入并回车，如：科幻电影"
+            />
+
+            <button
+              onClick={handleCompleteSetup}
+              disabled={setupExpertise.length === 0}
+              className="w-full mt-4 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition-all shadow-md shadow-blue-100"
+            >
+              保存设置并进入工作台
+            </button>
+            
+            <button
+               onClick={handleLogout}
+               className="w-full mt-3 text-sm text-gray-400 hover:text-red-500 py-2"
+            >
+              取消并退出登录
+            </button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Render: Dashboard (Main App) ---
   return (
     <div className="min-h-screen bg-[#f6f7f9] text-gray-800">
+      
       {/* Activity Alert */}
       {inactivityAlert && (
         <div className="bg-amber-50 border-b border-amber-100 px-6 py-3 flex items-start gap-3 animate-fade-in-down">
@@ -373,7 +463,9 @@ const App: React.FC = () => {
           <div className="flex items-center gap-6">
             <div className="hidden md:flex flex-col items-end text-sm">
               <div className="text-gray-500 flex items-center gap-2">
-                 <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-xs">{userConfig.expertise[0]}等{userConfig.expertise.length}项擅长</span>
+                 <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-xs">
+                   {currentAccount.expertise[0]}等{currentAccount.expertise.length}项擅长
+                 </span>
               </div>
             </div>
 
@@ -382,44 +474,62 @@ const App: React.FC = () => {
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
                 className="flex items-center gap-2 hover:bg-gray-50 p-1.5 rounded-lg transition-colors"
               >
-                <div className="w-8 h-8 rounded-full border border-gray-200 overflow-hidden">
+                <div className="w-8 h-8 rounded-full border border-gray-200 overflow-hidden bg-gray-100">
                   <img 
-                    src={userConfig.zhihuUser?.avatar || MOCK_ZHIHU_USER.avatar} 
+                    src={currentAccount.user.avatar} 
                     alt="User" 
                     className="w-full h-full object-cover"
                   />
                 </div>
                 <div className="hidden md:block text-left">
-                  <p className="text-sm font-medium text-gray-700">{userConfig.zhihuUser?.name || '未登录'}</p>
+                  <p className="text-sm font-medium text-gray-700">{currentAccount.user.name}</p>
                 </div>
                 <ChevronDown size={14} className="text-gray-400" />
               </button>
 
-              {/* Dropdown */}
+              {/* Profile Dropdown */}
               {showProfileMenu && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50 animate-fade-in-up">
+                <div className="absolute right-0 mt-2 w-60 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50 animate-fade-in-up">
                   <div className="px-4 py-3 border-b border-gray-50">
-                    <p className="text-sm text-gray-500">当前账号</p>
-                    <p className="font-bold text-gray-800 truncate">{userConfig.zhihuUser?.name}</p>
+                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">当前账号</p>
+                    <div className="flex items-center gap-3">
+                      <img src={currentAccount.user.avatar} className="w-8 h-8 rounded-full" alt="avatar" />
+                      <div className="overflow-hidden">
+                        <p className="font-bold text-gray-800 truncate">{currentAccount.user.name}</p>
+                        <p className="text-xs text-gray-500 truncate">{currentAccount.user.headline}</p>
+                      </div>
+                    </div>
                   </div>
+                  
+                  {/* Account Switcher List */}
+                  {accounts.length > 1 && (
+                    <div className="py-2 border-b border-gray-50">
+                      <p className="px-4 pb-2 text-xs text-gray-400">切换账号</p>
+                      {accounts.filter(a => a.user.id !== currentAccount.user.id).map(acc => (
+                         <button
+                           key={acc.user.id}
+                           onClick={() => { handleSelectAccount(acc.user.id); setShowProfileMenu(false); }}
+                           className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-3"
+                         >
+                           <img src={acc.user.avatar} className="w-6 h-6 rounded-full grayscale opacity-70" alt="avatar" />
+                           <span className="text-sm text-gray-600">{acc.user.name}</span>
+                         </button>
+                      ))}
+                    </div>
+                  )}
+
                   <button 
-                    onClick={handleSwitchAccount}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+                    onClick={() => { setShowProfileMenu(false); saveCurrentId(null); setLoginStep('connect'); }}
+                    className="w-full text-left px-4 py-3 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2"
                   >
-                    <Repeat size={14} /> 切换账号
-                  </button>
-                  <button 
-                    onClick={handleLogout}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
-                  >
-                    <LogOut size={14} /> 退出登录
+                    <PlusCircle size={16} /> 添加其他账号
                   </button>
                   <div className="border-t border-gray-50 my-1"></div>
                   <button 
-                    onClick={handleFullReset}
+                    onClick={handleLogout}
                     className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                   >
-                    <X size={14} /> 重置所有设置
+                    <LogOut size={16} /> 退出当前登录
                   </button>
                 </div>
               )}
@@ -644,4 +754,16 @@ const App: React.FC = () => {
               </a>
               <button 
                 onClick={() => setPublishedSuccessDraft(null)}
-                className="block w-full py-3 bg-gray-100 text-gray-60
+                className="block w-full py-3 bg-gray-100 text-gray-600 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+              >
+                留在本页
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default App;
